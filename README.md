@@ -146,7 +146,43 @@ CREATE TABLE temperature_log (
 
 ---
 
-## 9. TODO
+## 9. 安裝 Ollama 與下載 Llama3.2
+
+Ollama 是本專案執行 LLM（於 `voice_app2.py` 透過 LangChain‑Ollama 呼叫）的本地推論伺服器。以下說明如何安裝與拉取模型。
+
+### 9.1 安裝 Ollama
+
+| 作業系統                                                                      | 步驟         |
+| ------------------------------------------------------------------------- | ---------- |
+| **Ubuntu / Debian**                                                       | \`\`\`bash |
+| curl -fsSL [https://ollama.com/install.sh](https://ollama.com/install.sh) | sh         |
+| ollama serve &   # 11434 埠，背景啟動                                           |            |
+
+````|
+| **macOS (Homebrew)** | ```bash
+brew install ollama
+brew services start ollama
+``` |
+| **Windows 10/11** | 1. 前往 <https://ollama.com/download> 下載 MSI 安裝程式。<br>2. 完成安裝後，Ollama Desktop 會在背景啟動 `ollama serve`（預設 11434 埠）。 |
+
+> 如需自訂連線位置，設定環境變數：
+> ```bash
+> export OLLAMA_HOST=http://<ip>:11434  # Windows: setx OLLAMA_HOST "http://<ip>:11434"
+> ```
+> `voice_app2.py` 會自動讀取該變數。
+
+### 9.2 下載模型 Llama3.2:latest
+
+```bash
+# ≈6‑8 GB，視量化/量化版本而定
+ollama pull llama3.2:latest
+````
+
+> 完成後即可在執行 `streamlit run voice_app2.py` 時看到模型被載入並用於 Function‑Calling。
+
+---
+
+## 10. TODO
 
 * [ ] 支援多機台冷卻機分群管理。
 * [ ] 加入 Grafana／TimescaleDB，長期趨勢監控。
@@ -154,4 +190,4 @@ CREATE TABLE temperature_log (
 
 ---
 
-Made with ❤️  for 智慧製造研究。
+Made with ❤️  for 智慧製造研究.
