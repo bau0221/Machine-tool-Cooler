@@ -188,7 +188,7 @@ scoop install ollama
 
 ````|
 
-### 9.2 下載（pull）Llama3.2:latest
+### 9.2 下載（pull）Llama3.2:latest (在終端機執行)
 ```bash
 ollama pull llama3.2:latest
 ````
