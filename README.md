@@ -1,239 +1,291 @@
 # CoolerApp 冷卻機監控與智慧化控制套件
 
-> **雙核心：桌面監控 GUI ＋ Streamlit 聲控／聊天助理**
->
-> * **`cooler_app.py`**：PyQt5 打造的冷卻機 Modbus 監控與資料擷取介面。
-> * **`voice_app2.py`**：Streamlit 與 LangChain／Ollama 整合的智慧化操作介面，支援文字與語音輸入、AI 參數最佳化、NC‑Code 解析，自動透過 Socket 與 `cooler_app.py` 串接完成調溫。
+**雙核心：桌面監控 GUI ＋ Streamlit 聲控／聊天助理**
+
+* **cooler\_app.py**：PyQt5 打造的冷卻機 Modbus 監控與資料擷取介面
+* **voice\_app2.py**：Streamlit + LangChain/Ollama 整合的智慧化操作介面，支援文字與語音輸入、AI 參數優化及 NC‑Code 自動解析，經由 Socket 與 `cooler_app.py` 串接並完成調溫
 
 ---
 
-## 1. 功能總覽
+## 目錄
 
-| 模組                 | 主要功能                                                                                                                                                                                                                                                                                   | 特色                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| **cooler\_app.py** | • Modbus‑TCP 連線<br>• 每秒讀取液態／參考／設定溫度<br>• 手動寫入設定溫度<br>• 自動寫入 SQLite (`temperature_log.db`)<br>• 內建 `localhost:9999` Socket Server                                                                                                                                                       | - PyQt5 直覺化按鈕 & 數值顯示<br>- 全程 Logging (`cooler_app.log`)<br>- 跨平台（Win / Linux）             |
-| **voice\_app2.py** | • Streamlit 深色儀表板 UI<br>• 語音 / 文字輸入切換<br>• NC‑Code ⬆️ 上傳 → 解析 RPM 與加工時長<br>• `find_optimal_temp_offset()` 以 Optuna + 兩組迴歸模型自動尋優<br>• `fetch_cooler_temperature()` 讀取指定時點溫度<br>• LangChain Function‑Calling + Ollama Llama3.2 回答領域知識<br>• 一鍵送出最佳 Offset → Socket `[TempOffset]:<value>` | - 具備 TTS (gTTS) 與語音辨識 (speech\_recognition)<br>- 介面即時 Chat Log 與自動重繪<br>- 前端 CSS 客製化、深色主題 |
+1. [專案概覽](#專案概覽)
+2. [功能總覽](#功能總覽)
+3. [安裝與環境設定](#安裝與環境設定)
+4. [快速啟動](#快速啟動)
+5. [系統架構](#系統架構)
+6. [資料庫結構](#資料庫結構)
+7. [Socket 通訊協議](#socket-通訊協議)
+8. [AI 最佳化流程](#ai-最佳化流程)
+9. [FAQ](#faq)
+10. [進階設定：Ollama 與 SQLite](#進階設定ollama-與-sqlite)
+11. [TODO 清單](#todo-清單)
 
 ---
 
-## 2. 環境安裝
+## 專案概覽
 
-> 建議使用 **Python ≥3.10**，並建立虛擬環境。
+本專案包含兩個相互協作的介面：
+
+1. **cooler\_app.py**（桌面 GUI）
+
+   * 建立 Modbus‑TCP (502) 連線，讀取並顯示實時溫度
+   * 手動／自動設定冷卻溫度並寫入機台
+   * 每秒記錄資料至 SQLite (`temperature_log.db`)
+   * 完整日誌記錄（`cooler_app.log`）
+
+2. **voice\_app2.py**（Web 聲控／文字介面）
+
+   * Streamlit 深色儀表板，支援文字與語音輸入
+   * 上傳 NC‑Code，解析 RPM 與累積運行時間
+   * 調用 Optuna + 多輸出迴歸模型自動搜尋最優 ΔT
+   * LangChain Function‑Calling + Ollama Llama3.2 提供參數建議與工藝知識
+   * 一鍵發送最佳 ΔT 設定至 `cooler_app.py`
+
+---
+
+## 功能總覽
+
+| 模組             | 功能摘要                                                             |
+| -------------- | ---------------------------------------------------------------- |
+| cooler\_app.py | Modbus‑TCP 連線、溫度顯示、設定溫度、SQLite 記錄、Socket Server (localhost:9999) |
+| voice\_app2.py | 語音/文字切換、NC‑Code 解析、AI 最佳化、LLM 語意互動、Socket Client                 |
+
+特色：
+
+* TTS / 語音辨識（gTTS, speech\_recognition）
+* 即時 Chat Log 與介面重繪
+* 深色主題與自訂 CSS
+
+---
+
+## 安裝與環境設定
+
+> 建議使用 Python ≥ 3.10，並在虛擬環境中安裝
 
 ```bash
-# 建立虛擬環境（可自行替換 venv 名稱）
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 安裝主要套件
+# macOS/Linux
+source venv/bin/activate
+# Windows
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` 建議內容（節錄）：
+**建議套件列表（節錄）**：
 
 ```
 PyQt5>=5.15
 pyModbusTCP>=0.2.0
 streamlit>=1.35
 gTTS
-playsound==1.3.0   # 2.x 在 Linux 可能有問題
+playsound==1.3.0
 speechrecognition
 optuna
 joblib
 pandas
 langchain
 langchain-ollama
-langchain-experimental
-ollama   # 本地模型推論服務
+ollama
 ```
 
-> **Mac 使用者注意**：`playsound` 可能需改用 `pyobjc` 版本；或自行以 `afplay` 播放 mp3。
+> **macOS users**: 若 `playsound` 有問題，可改用 `afplay` 或 `pyobjc`。
 
 ---
 
-## 3. 快速啟動
+## 快速啟動
 
-```bash
-# ① 啟動冷卻機監控 GUI（Modbus 連線 & Socket Server）
-python cooler_app.py
+1. 啟動桌面 GUI：
 
-# ② 另開終端：啟動智慧化介面（預設瀏覽器埠 http://localhost:8501）
-streamlit run voice_app2.py
-```
+   ```bash
+   python cooler_app.py
+   ```
+2. 開新終端，啟動 Web 智慧介面：
 
-> 第一次執行 `voice_app2.py` 會載入／建立 `temperature_log.db` 及 \*.joblib 能耗／誤差模型，可依需放置於同一目錄。
-
----
-
-## 4. 系統架構圖
-
-```
-┌────────────┐        Socket (TCP:9999)        ┌──────────────────┐
-│ cooler_app │◀───────────────────────────────▶│ voice_app2 (UI) │
-│  (PyQt5)   │        [TempOffset]: ΔT        │  Streamlit      │
-└────────────┘                                  │  + LangChain    │
-     ▲  ▲  ▲                                     └──────────────────┘
-     │  │  │              SQLite                ▲
-     │  │  └────────────────────────────────────┘
-     │  │                                    讀寫 `temperature_log.db`
-     │  └── Modbus‑TCP  (502) 與實體冷卻機溝通
-     └─ Logging
-```
+   ```bash
+   streamlit run voice_app2.py
+   ```
+3. 首次執行會自動建立 `temperature_log.db` 與模型檔 (`*.joblib`)，請放在相同目錄。
 
 ---
 
-## 5. Socket 協議
+## 系統架構
 
-| 指令格式                    | 說明                                                                                    |
-| ----------------------- | ------------------------------------------------------------------------------------- |
-| `[TempOffset]: <float>` | 將 `<float>` °C 偏差寫入冷卻機。`cooler_app.py` 收到後以 `write_single_register()` 實際下發。成功回覆 `OK`。 |
-
-> 如需外部腳本快速測試：
->
-> ```python
-> import socket
-> s = socket.socket(); s.connect(("localhost", 9999))
-> s.send(b"[TempOffset]: 5.0"); print(s.recv(1024)); s.close()
-> ```
+```
+┌────────────┐      Socket (TCP:9999)      ┌──────────────────┐
+│ cooler_app │<-------------------------->│ voice_app2 (UI) │
+│  (PyQt5)   │     [TempOffset]: ΔT       │  Streamlit      │
+└────────────┘                            │  + LangChain    │
+     ▲  ▲  ▲                              └──────────────────┘
+     │  │  └── Modbus‑TCP (502) 與冷卻機通訊
+     │  └── 日誌記錄
+     └── SQLite 資料庫 (temperature_log.db)
+```
 
 ---
 
-## 6. 資料庫結構 `temperature_log.db`
+## 資料庫結構
 
 ```sql
 CREATE TABLE temperature_log (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp       TEXT NOT NULL,
-    sensor_liquid   REAL,
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp        TEXT    NOT NULL,
+    sensor_liquid    REAL,
     sensor_reference REAL,
-    set_temperature REAL
+    set_temperature  REAL
 );
 ```
 
-* `cooler_app.py` 每秒將最新讀值寫入。
-* `voice_app2.py` 可根據時間差 (`delta_seconds` / `delta_minutes`) 查詢歷史紀錄。
+* `cooler_app.py` 每秒寫入最新讀值
+* `voice_app2.py` 支援時間範圍查詢（秒／分）
 
 ---
 
-## 7. AI 最佳化流程
+## Socket 通訊協議
 
-1. `parse_nc_code_file()` 讀取上傳的 NC 程式，統計各 RPM 的累積運轉時長 (hr)。
-2. 對每組 (RPM, Hour) 呼叫 `find_optimal_temp_offset()`：
+* **指令**：`[TempOffset]: <float>` → 設定冷卻偏差 (°C)
+* **回應**：`OK` 表示已下發至機台
 
-   * 兩個 `joblib` 模型分別預測能耗 (Cooler/Machine) 與熱誤差 (Avg / Max)。
-   * 動態權重成本函式平衡精度與能耗 → Optuna TPE 搜尋 2.5–8.5 °C 最佳 Offset。
-3. 使用者可於 UI 中一鍵送出所有 Offset，或在 AI 建議後回答 **yes/no** 決定是否執行。
+**範例**：
 
----
-
-## 8. FAQ
-
-<details>
-<summary>啟動 `cooler_app.py` 時顯示「連線失敗」？</summary>
-
-* 確認冷卻機 IP 與埠號 (預設 502) 是否正確。
-* 工控網段請關閉 Windows 防火牆或加入例外。
-
-</details>
-
-<details>
-<summary>Streamlit 畫面卡住或語音辨識無反應？</summary>
-
-* 確認瀏覽器允許麥克風權限。
-* Linux 若無法播放語音，請更換 `playsound==1.3.0` 或改用 `ffplay` 播放。
-
-</details>
+```python
+import socket
+s = socket.socket()
+s.connect(('localhost', 9991))  # 9991 為 voice_app2 client port
+s.send(b'[TempOffset]: 5.0')
+print(s.recv(1024))
+s.close()
+```
 
 ---
 
+## AI 最佳化流程
+
+1. 解析 NC‑Code，累計各 RPM 運行時長
+2. 呼叫 `find_optimal_temp_offset()`：
+
+   * 兩組模型預測 Cooler/Machine 能耗與平均/最大熱誤差
+   * 動態權重成本函式平衡精度與能耗
+   * Optuna TPE 在 \[2.5, 8.5] °C 範圍搜尋最優 ΔT
+3. 使用者可一鍵下發建議，或在 Chat 中輸入 yes/no 決定執行
+
 ---
 
-## 9. 安裝 Ollama、拉取 **Llama3.2\:latest** 與安裝 SQLite (Windows)
+## 訓練資料與模型流程
 
-本節分三部分：
+本專案以 **Cooling\_Machine\_Data\_EN.csv** 為樣本資料，欄位包含：
 
-1. **安裝 Ollama**（Ubuntu／macOS／Windows）
-2. **下載 Llama3.2\:latest** 模型
-3. **在 Windows 安裝 SQLite CLI**（可選：方便命令列檢視資料庫）
+| 欄位             | 說明                 |
+| -------------- | ------------------ |
+| `RPM`          | 主軸轉速 (rev · min⁻¹) |
+| `Hour`         | 累計加工時數 (h)         |
+| `TempOffset`   | 冷卻機設定溫差 ΔT (°C)    |
+| `CoolerPower`  | 冷卻機功率 (kW)         |
+| `MachinePower` | 機台功率 (kW)          |
+| `AvgError`     | 平均熱誤差 (µm)         |
+| `MaxError`     | 最大熱誤差 (µm)         |
 
-> `voice_app2.py` 透過 **Ollama API ([http://localhost:11434](http://localhost:11434))** 呼叫本機 LLM；未啟動 Ollama 將無法使用智慧化功能。
+> 若新增感測器，可直接於 CSV 追加欄位，並在程式中擴充特徵。
 
-### 9.1 安裝 Ollama
+### 1. 預處理
 
-| 作業系統                                                                      | 安裝步驟       |
-| ------------------------------------------------------------------------- | ---------- |
-| **Ubuntu / Debian**                                                       | \`\`\`bash |
-| curl -fsSL [https://ollama.com/install.sh](https://ollama.com/install.sh) | sh         |
-| ollama serve &  # 背景啟動，預設埠 11434                                          |            |
+透過 `training_dataset.py` 的 `load_and_preprocess()` 函數：
 
-````|
-| **macOS (Homebrew)** | ```bash
-brew install ollama
-brew services start ollama  # 開機自動啟動
-``` |
-| **Windows 10/11** | 1. 下載官方安裝程式：<https://ollama.com/download/windows>（`OllamaSetup‑x.y.z.msi`）<br>2. **以系統管理員權限** 雙擊執行安裝嚮導 → 結束後會將 **Ollama** 註冊為 *Windows Service* 並自動啟動（埠 11434）。<br>3. 重開機或在 **服務 (services.msc)** 確認 **Ollama** 服務狀態為「正在執行」。<br>4. 開啟 **PowerShell** 驗證：<br>```powershell
-ollama --version          # 顯示版本號
-ollama serve              # 若服務未啟動，可手動啟動
-````
+1. 以 **Tab** 分隔讀取資料（預設 `	`）
+2. 移除任何空值列，確保模型不受缺漏值影響
 
-✅ 看到 `Ollama is running on http://localhost:11434` 即安裝成功。<br><br>**可選 Chocolatey / Scoop 安裝**<br>\`\`\`powershell
+### 2. 特徵選擇與目標
 
-# Chocolatey
+```text
+X = [RPM, Hour, TempOffset]
+能耗目標  y_energy = [CoolerPower, MachinePower]
+誤差目標  y_error  = [AvgError,  MaxError]
+```
 
-choco install ollama -y
+### 3. 模型架構
 
-# 或 Scoop
+| 模型   | 多項式階數 | 正規化            | 演算法            | 目標                        |
+| ---- | ----- | -------------- | -------------- | ------------------------- |
+| 能耗模型 | 10    | StandardScaler | Ridge (α=0.03) | CoolerPower, MachinePower |
+| 誤差模型 | 5     | StandardScaler | Ridge (α=0.1)  | AvgError, MaxError        |
 
-scoop install ollama
+使用 `MultiOutputRegressor` 以一次同時預測兩個輸出，並各自計算 MSE 作為評估指標。
 
-````|
+### 4. 訓練與評估流程
 
-### 9.2 下載（pull）Llama3.2:latest (在終端機執行)
+```python
+energy_model, error_model, X, y_energy, y_error = train_models(df)
+energy_pred = energy_model.predict(X)
+error_pred  = error_model.predict(X)
+```
+
+* 以 **全資料回填預測** 取得基準 MSE
+* GPU/CPU 皆可執行，約數秒內完成
+
+### 5. 模型持久化
+
+```python
+from joblib import dump
+
+dump(energy_model, 'energy_model_poly_ridge.joblib')
+dump(error_model,  'error_model_poly_ridge.joblib')
+```
+
+生成的 `.joblib` 檔會與 `voice_app2.py` 同目錄，自動載入供即時預測。
+
+---
+
+## FAQ
+
+---
+
+## 進階設定：Ollama 與 SQLite (Windows)
+
+**1. 安裝 Ollama**
+
+* **Windows 10/11**：
+
+  1. 下載官方 MSI 安裝程式 ([https://ollama.com/download/windows](https://ollama.com/download/windows))
+  2. 以系統管理員啟動，完成後重開機或執行 `services.msc` 確認 `Ollama` 服務運行
+  3. PowerShell 驗證：
+
+     ```powershell
+     ollama --version
+     ollama serve
+     ```
+  4. 成功後會顯示 "Ollama is running on [http://localhost:11434](http://localhost:11434)"
+
+**2. 下載 Llama3.2**\*\*:latest\*\*
+
 ```bash
 ollama pull llama3.2:latest
-````
+```
 
-* 第一次下載約數分鐘（視網速及磁碟而定）。
-* 模型存放於：
+**3. 安裝 SQLite CLI（可選）**
 
-  * Linux/macOS → `~/.ollama/models/`
-  * Windows → `%USERPROFILE%\.ollama\models\`
-* 完成後測試：
-
-  ```bash
-  ollama run llama3.2:latest "Hello"
-  ```
-
-### 9.3 Windows 安裝 SQLite CLI（可選）
-
-> Python 已內建 `sqlite3` 模組，僅當你想在命令列快速查詢或匯出資料時才需此步驟。
-
-1. 前往 [https://sqlite.org/download.html](https://sqlite.org/download.html) → **Precompiled Binaries for Windows** → 下載 `sqlite-tools-win-x64-*.zip`。
-2. 解壓縮至 `C:\sqlite` 或自選資料夾。
-3. 將該資料夾加入「**環境變數 PATH**」：**系統設定 → 進階系統設定 → 環境變數 → Path → 新增 `C:\sqlite`**。
-4. 重新開啟 PowerShell／CMD 驗證：
+1. 下載 Windows 二進位檔：[https://sqlite.org/download.html](https://sqlite.org/download.html)
+2. 解壓至 `C:\sqlite`
+3. 將路徑加入環境變數 PATH
+4. 驗證：
 
    ```powershell
-   sqlite3 --version  # 顯示版本號即完成
+   sqlite3 --version
    ```
-5. 範例操作：
+5. 使用：
 
    ```powershell
-   cd <專案路徑>
    sqlite3 temperature_log.db
-   .tables                        -- 查看資料表
+   .tables
    SELECT COUNT(*) FROM temperature_log;
    .quit
    ```
 
 ---
 
-## 10. TODO
+## TODO 清單
 
-* [ ] 支援多機台冷卻機分群管理。
-* [ ] 加入 Grafana／TimescaleDB，長期趨勢監控。
-* [ ] 將語音 TTS 改用 Edge‑TTS 以減少 gTTS API 限制。
+*
 
 ---
 
-Made with ❤️  for 智慧製造研究.
+*Made with ❤️ for 智慧製造研究*
